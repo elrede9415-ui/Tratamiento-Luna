@@ -958,6 +958,39 @@
       color: #fcd34d;
     }
 
+  
+    .password-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .password-row input {
+      margin: 0;
+    }
+
+    .password-row .mini-btn {
+      white-space: nowrap;
+      height: 46px;
+    }
+
+  
+    .sync-reminder {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: var(--warn-soft);
+      color: #92400e;
+      border: 1px solid var(--warn);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    body.dark .sync-reminder {
+      color: #fcd34d;
+    }
+
   </style>
   <link rel="manifest" href="./manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
@@ -1272,7 +1305,10 @@
               <input id="syncUrl" placeholder="https://script.google.com/macros/s/.../exec" />
 
               <label for="syncSecret">Código secreto</label>
-              <input id="syncSecret" type="password" placeholder="Tu código secreto privado" />
+              <div class="password-row">
+                <input id="syncSecret" type="password" placeholder="Tu código secreto privado" />
+                <button class="mini-btn" type="button" onclick="toggleSyncSecret()" id="toggleSyncSecretBtn">Ver</button>
+              </div>
 
               <label for="syncAuto">Sincronizar al abrir</label>
               <select id="syncAuto">
@@ -1284,9 +1320,11 @@
                 <button class="mini-btn" onclick="testSyncConnection()">Probar conexión</button>
                 <button class="mini-btn" onclick="syncFromCloud(true)">Sincronizar ahora</button>
                 <button class="mini-btn" onclick="pushAllLocalRecords()">Subir mi progreso</button>
+                <button class="mini-btn" onclick="repairInstalledApp()">Reparar app instalada</button>
               </div>
 
               <div id="syncStatus" class="sync-status">Configura el código secreto y toca “Probar conexión”.</div>
+              <div id="syncReminder" class="sync-reminder" style="display:none;"></div>
             </div>
           </details>
 
@@ -2055,6 +2093,110 @@
     }
 
 
+
+
+    async function repairInstalledApp() {
+      const ok = confirm(
+        "Esto limpia la caché de la app instalada para que cargue la versión nueva. No borra tu progreso local. ¿Continuar?"
+      );
+      if (!ok) return;
+
+      try {
+        setSyncStatus("Reparando app instalada y limpiando caché...", "warn");
+
+        if ("serviceWorker" in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const reg of regs) {
+            await reg.unregister();
+          }
+        }
+
+        if ("caches" in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(key => caches.delete(key)));
+        }
+
+        setSyncStatus("Listo. Se recargará la app.", "ok");
+        alert("Listo. La app se va a recargar. Después vuelve a probar la conexión.");
+        location.href = location.origin + location.pathname + "?v=12";
+      } catch (err) {
+        setSyncStatus("No se pudo reparar automáticamente: " + err.message, "danger");
+        alert("No se pudo reparar automáticamente: " + err.message);
+      }
+    }
+
+
+    function toggleSyncSecret() {
+      const input = document.getElementById("syncSecret");
+      const btn = document.getElementById("toggleSyncSecretBtn");
+      if (!input || !btn) return;
+
+      if (input.type === "password") {
+        input.type = "text";
+        btn.textContent = "Ocultar";
+      } else {
+        input.type = "password";
+        btn.textContent = "Ver";
+      }
+    }
+
+
+
+    function syncReadyForSharedUpdates() {
+      return !!(
+        (state.settings.syncUserName || "").trim() &&
+        (state.settings.syncUrl || "").trim() &&
+        (state.settings.syncSecret || "").trim() &&
+        (state.settings.syncFamilyCode || "").trim()
+      );
+    }
+
+    function updateSyncReminder() {
+      const el = document.getElementById("syncReminder");
+      if (!el) return;
+
+      const missing = [];
+      if (!(state.settings.syncUserName || "").trim()) missing.push("nombre de este celular");
+      if (!(state.settings.syncUrl || "").trim()) missing.push("URL de sincronización");
+      if (!(state.settings.syncSecret || "").trim()) missing.push("código secreto");
+      if (!(state.settings.syncFamilyCode || "").trim()) missing.push("código familiar");
+
+      if (!missing.length) {
+        el.style.display = "none";
+        el.textContent = "";
+        return;
+      }
+
+      el.style.display = "block";
+      el.textContent = "Aviso: la sincronización compartida aún no está completa. Falta: " + missing.join(", ") + ". Si marcas una medicina así, solo se guardará en este celular.";
+    }
+
+    function remindBeforeUnsyncedUpdate(actionText = "actualizar esta medicina") {
+      saveSyncSettingsOnly();
+
+      // Si falta el nombre, primero intenta pedirlo de forma amigable.
+      if (!(state.settings.syncUserName || "").trim()) {
+        const name = prompt("Antes de marcar la medicina, escribe el nombre para identificar este celular. Ejemplo: Eliud, Mamá, Papá, cuidador.");
+        if (name && name.trim()) {
+          state.settings.syncUserName = name.trim();
+          const input = document.getElementById("syncUserName");
+          if (input) input.value = state.settings.syncUserName;
+          writeJSON(SETTINGS_KEY, state.settings);
+        }
+      }
+
+      updateSyncReminder();
+
+      if (syncReadyForSharedUpdates()) return true;
+
+      return confirm(
+        "La sincronización compartida no está completa.\\n\\n" +
+        "Si continúas, este cambio se guardará solo en este celular y la otra persona no lo verá todavía.\\n\\n" +
+        "¿Quieres continuar de todos modos?"
+      );
+    }
+
+
     function syncConfigured() {
       return !!(state.settings.syncUrl && state.settings.syncSecret && state.settings.syncFamilyCode);
     }
@@ -2076,6 +2218,7 @@
       if (!state.settings.syncFamilyCode) state.settings.syncFamilyCode = "LUNA2026";
       if (!state.settings.syncAuto) state.settings.syncAuto = "yes";
       writeJSON(SETTINGS_KEY, state.settings);
+      updateSyncReminder();
     }
 
     function syncRequest(params) {
@@ -2202,8 +2345,9 @@
       try {
         setSyncStatus("Probando conexión...", "warn");
         const data = await syncRequest({ action: "ping" });
-        setSyncStatus(data.message || "Conexión correcta.", "ok");
-        alert("Conexión correcta con Google Sheets.");
+        setSyncStatus((data.message || "Conexión correcta.") + " La sincronización queda guardada en este celular.", "ok");
+        updateSyncReminder();
+        alert("Conexión correcta con Google Sheets. La sincronización queda guardada en este celular.");
       } catch (err) {
         setSyncStatus(err.message, "danger");
         alert("No se pudo conectar: " + err.message);
@@ -2326,6 +2470,7 @@
     }
 
     function saveTaskRecord(id, status, actualDate, note = null) {
+      if (!remindBeforeUnsyncedUpdate("marcar esta medicina")) return;
       const records = getRecords();
       const prev = records[id] || {};
       const who = state.settings.syncUserName || prev.who || "";
@@ -2342,6 +2487,7 @@
     }
 
     function clearTaskRecord(id) {
+      if (!remindBeforeUnsyncedUpdate("deshacer esta medicina")) return;
       const records = getRecords();
       delete records[id];
       writeJSON(RECORDS_KEY, records);
@@ -2350,6 +2496,7 @@
     }
 
     function addTaskNote(id) {
+      if (!remindBeforeUnsyncedUpdate("agregar una nota")) return;
       const records = getRecords();
       const current = records[id]?.note || "";
       const note = prompt("Escribe una nota para esta tarea:", current);
@@ -3181,6 +3328,7 @@
 
     loadSettings();
     recalc(true);
+    updateSyncReminder();
     setTimeout(autoSyncOnStart, 900);
   </script>
 
