@@ -958,24 +958,6 @@
       color: #fcd34d;
     }
 
-  
-    .password-row {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .password-row input {
-      margin: 0;
-    }
-
-    .password-row .mini-btn {
-      white-space: nowrap;
-      height: 46px;
-    }
-
-  
     .sync-reminder {
       margin-top: 10px;
       padding: 10px 12px;
@@ -1291,24 +1273,18 @@
           <button class="btn" onclick="saveSettings()">Guardar cambios</button>
 
           <details class="compact-details" open>
-            <summary>🔄 Sincronización compartida</summary>
+            <summary>🔄 Sincronización Firebase</summary>
             <div class="details-body">
               <p class="muted small">Permite compartir el estado del tratamiento entre varios celulares. Cada registro muestra quién marcó la medicina. No sincroniza fotos.</p>
 
               <label for="syncUserName">Nombre para identificar este celular</label>
               <input id="syncUserName" placeholder="Ejemplo: Eliud, Mamá, Papá, cuidador" />
 
-              <label for="syncFamilyCode">Código familiar</label>
+              <label for="syncFamilyCode">Código familiar / grupo</label>
               <input id="syncFamilyCode" placeholder="LUNA2026" />
 
-              <label for="syncUrl">URL de sincronización</label>
-              <input id="syncUrl" placeholder="https://script.google.com/macros/s/.../exec" />
-
-              <label for="syncSecret">Código secreto</label>
-              <div class="password-row">
-                <input id="syncSecret" type="password" placeholder="Tu código secreto privado" />
-                <button class="mini-btn" type="button" onclick="toggleSyncSecret()" id="toggleSyncSecretBtn">Ver</button>
-              </div>
+              <label for="firebaseDbUrl">URL de Realtime Database</label>
+              <input id="firebaseDbUrl" placeholder="https://...firebaseio.com" />
 
               <label for="syncAuto">Sincronizar al abrir</label>
               <select id="syncAuto">
@@ -1317,13 +1293,12 @@
               </select>
 
               <div class="actions-row">
-                <button class="mini-btn" onclick="testSyncConnection()">Probar conexión</button>
-                <button class="mini-btn" onclick="syncFromCloud(true)">Sincronizar ahora</button>
-                <button class="mini-btn" onclick="pushAllLocalRecords()">Subir mi progreso</button>
-                <button class="mini-btn" onclick="repairInstalledApp()">Reparar app instalada</button>
+                <button class="mini-btn" onclick="testFirebaseConnection()">Probar conexión</button>
+                <button class="mini-btn" onclick="syncFromFirebase(true)">Sincronizar ahora</button>
+                <button class="mini-btn" onclick="pushAllLocalRecordsFirebase()">Subir mi progreso</button>
               </div>
 
-              <div id="syncStatus" class="sync-status">Configura el código secreto y toca “Probar conexión”.</div>
+              <div id="syncStatus" class="sync-status">Configura nombre, código familiar y toca “Probar conexión”.</div>
               <div id="syncReminder" class="sync-reminder" style="display:none;"></div>
             </div>
           </details>
@@ -1521,12 +1496,25 @@
     </nav>
   </div>
 
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
   <script>
     const SETTINGS_KEY = "lunaTreatmentSettings_v3_full";
     const RECORDS_KEY = "lunaTreatmentRecords_v3_full";
     const OVERRIDES_KEY = "lunaTreatmentOverrides_v3_full";
     const NOTES_KEY = "lunaTreatmentNotes_v3_full";
     const PHOTOS_KEY = "lunaTreatmentPhotos_v3_full";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAKQ4ZooT_kJyl-FeaynIavgkKY5DCYp5Q",
+      authDomain: "tratamiento-luna.firebaseapp.com",
+      databaseURL: "https://tratamiento-luna-default-rtdb.firebaseio.com",
+      projectId: "tratamiento-luna",
+      storageBucket: "tratamiento-luna.firebasestorage.app",
+      messagingSenderId: "988416519908",
+      appId: "1:988416519908:web:cc163799f10c041ffc06f1",
+      measurementId: "G-KKHTJFS95V"
+    };
     const INVENTORY_KEY = "lunaTreatmentInventory_v3_full";
     const THEME_KEY = "lunaTreatmentTheme_v3_full";
 
@@ -1559,10 +1547,9 @@
         ocPerPump: 0.10,
         mmPerBath: 25.0,
         refillPct: 20,
-        syncUserName: "",
+        syncUserName: "Eliud",
         syncFamilyCode: "LUNA2026",
-        syncUrl: "https://script.google.com/macros/s/AKfycbz1hQ6JzIvv0uHVBFN8gC8jkgUABvHlrJdekS8F10NXGnbtznRfU-pe_ffdkREx4HZapA/exec",
-        syncSecret: "",
+        firebaseDbUrl: "https://tratamiento-luna-default-rtdb.firebaseio.com",
         syncAuto: "yes"
       }
     };
@@ -1725,8 +1712,7 @@
       document.getElementById("refillPct").value = state.settings.refillPct;
       document.getElementById("syncUserName").value = state.settings.syncUserName || "";
       document.getElementById("syncFamilyCode").value = state.settings.syncFamilyCode || "LUNA2026";
-      document.getElementById("syncUrl").value = state.settings.syncUrl || "";
-      document.getElementById("syncSecret").value = state.settings.syncSecret || "";
+      document.getElementById("firebaseDbUrl").value = state.settings.firebaseDbUrl || firebaseConfig.databaseURL || "";
       document.getElementById("syncAuto").value = state.settings.syncAuto || "yes";
 
       const theme = localStorage.getItem(THEME_KEY) || "light";
@@ -1756,8 +1742,7 @@
       state.settings.refillPct = parseFloat(document.getElementById("refillPct").value) || 20;
       state.settings.syncUserName = document.getElementById("syncUserName").value.trim();
       state.settings.syncFamilyCode = document.getElementById("syncFamilyCode").value.trim() || "LUNA2026";
-      state.settings.syncUrl = document.getElementById("syncUrl").value.trim();
-      state.settings.syncSecret = document.getElementById("syncSecret").value.trim();
+      state.settings.firebaseDbUrl = document.getElementById("firebaseDbUrl").value.trim() || firebaseConfig.databaseURL;
       state.settings.syncAuto = document.getElementById("syncAuto").value || "yes";
 
       writeJSON(SETTINGS_KEY, state.settings);
@@ -2092,74 +2077,74 @@
       maybeMoveLinkedOtiflex(t, actual);
     }
 
-
-
-
-    async function repairInstalledApp() {
-      const ok = confirm(
-        "Esto limpia la caché de la app instalada para que cargue la versión nueva. No borra tu progreso local. ¿Continuar?"
-      );
-      if (!ok) return;
-
-      try {
-        setSyncStatus("Reparando app instalada y limpiando caché...", "warn");
-
-        if ("serviceWorker" in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          for (const reg of regs) {
-            await reg.unregister();
-          }
-        }
-
-        if ("caches" in window) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map(key => caches.delete(key)));
-        }
-
-        setSyncStatus("Listo. Se recargará la app.", "ok");
-        alert("Listo. La app se va a recargar. Después vuelve a probar la conexión.");
-        location.href = location.origin + location.pathname + "?v=12";
-      } catch (err) {
-        setSyncStatus("No se pudo reparar automáticamente: " + err.message, "danger");
-        alert("No se pudo reparar automáticamente: " + err.message);
-      }
+    function markTaskStatus(id, status) {
+      const note = status === "partial" ? prompt("Nota opcional: ¿qué quedó parcial?", "") :
+                   status === "refused" ? prompt("Nota opcional: ¿qué pasó?", "No se dejó aplicar completo") :
+                   status === "skipped" ? prompt("Nota opcional: ¿por qué se saltó?", "") : "";
+      saveTaskRecord(id, status, new Date(), note || "");
     }
 
 
-    function toggleSyncSecret() {
-      const input = document.getElementById("syncSecret");
-      const btn = document.getElementById("toggleSyncSecretBtn");
-      if (!input || !btn) return;
+    let lunaFirebaseApp = null;
+    let lunaFirebaseDb = null;
+    let lunaFirebaseListening = false;
+    let lunaApplyingRemote = false;
 
-      if (input.type === "password") {
-        input.type = "text";
-        btn.textContent = "Ocultar";
-      } else {
-        input.type = "password";
-        btn.textContent = "Ver";
-      }
+    function cleanFirebaseKey(str) {
+      return encodeURIComponent(String(str || "default"));
     }
 
+    function getFirebaseFamilyCode() {
+      return (state.settings.syncFamilyCode || "LUNA2026").trim() || "LUNA2026";
+    }
 
+    function getFirebasePath() {
+      return `tratamientos/${cleanFirebaseKey(getFirebaseFamilyCode())}/registros`;
+    }
 
-    function syncReadyForSharedUpdates() {
+    function setSyncStatus(message, type = "") {
+      const el = document.getElementById("syncStatus");
+      if (!el) return;
+      el.className = `sync-status ${type}`;
+      el.textContent = message;
+    }
+
+    function saveFirebaseSettingsOnly() {
+      const map = {
+        syncUserName: "syncUserName",
+        syncFamilyCode: "syncFamilyCode",
+        firebaseDbUrl: "firebaseDbUrl",
+        syncAuto: "syncAuto"
+      };
+
+      Object.keys(map).forEach(key => {
+        const el = document.getElementById(map[key]);
+        if (el) state.settings[key] = el.value.trim();
+      });
+
+      if (!state.settings.syncFamilyCode) state.settings.syncFamilyCode = "LUNA2026";
+      if (!state.settings.firebaseDbUrl) state.settings.firebaseDbUrl = firebaseConfig.databaseURL;
+      if (!state.settings.syncAuto) state.settings.syncAuto = "yes";
+      writeJSON(SETTINGS_KEY, state.settings);
+      updateFirebaseReminder();
+    }
+
+    function firebaseSyncReady() {
       return !!(
         (state.settings.syncUserName || "").trim() &&
-        (state.settings.syncUrl || "").trim() &&
-        (state.settings.syncSecret || "").trim() &&
-        (state.settings.syncFamilyCode || "").trim()
+        (state.settings.syncFamilyCode || "").trim() &&
+        (state.settings.firebaseDbUrl || "").trim()
       );
     }
 
-    function updateSyncReminder() {
+    function updateFirebaseReminder() {
       const el = document.getElementById("syncReminder");
       if (!el) return;
 
       const missing = [];
       if (!(state.settings.syncUserName || "").trim()) missing.push("nombre de este celular");
-      if (!(state.settings.syncUrl || "").trim()) missing.push("URL de sincronización");
-      if (!(state.settings.syncSecret || "").trim()) missing.push("código secreto");
       if (!(state.settings.syncFamilyCode || "").trim()) missing.push("código familiar");
+      if (!(state.settings.firebaseDbUrl || "").trim()) missing.push("URL de Realtime Database");
 
       if (!missing.length) {
         el.style.display = "none";
@@ -2168,13 +2153,12 @@
       }
 
       el.style.display = "block";
-      el.textContent = "Aviso: la sincronización compartida aún no está completa. Falta: " + missing.join(", ") + ". Si marcas una medicina así, solo se guardará en este celular.";
+      el.textContent = "Aviso: la sincronización aún no está completa. Falta: " + missing.join(", ") + ". Si marcas una medicina así, solo se guardará en este celular.";
     }
 
-    function remindBeforeUnsyncedUpdate(actionText = "actualizar esta medicina") {
-      saveSyncSettingsOnly();
+    function remindBeforeUnsyncedUpdate() {
+      saveFirebaseSettingsOnly();
 
-      // Si falta el nombre, primero intenta pedirlo de forma amigable.
       if (!(state.settings.syncUserName || "").trim()) {
         const name = prompt("Antes de marcar la medicina, escribe el nombre para identificar este celular. Ejemplo: Eliud, Mamá, Papá, cuidador.");
         if (name && name.trim()) {
@@ -2185,263 +2169,188 @@
         }
       }
 
-      updateSyncReminder();
+      updateFirebaseReminder();
 
-      if (syncReadyForSharedUpdates()) return true;
+      if (firebaseSyncReady()) return true;
 
       return confirm(
-        "La sincronización compartida no está completa.\\n\\n" +
-        "Si continúas, este cambio se guardará solo en este celular y la otra persona no lo verá todavía.\\n\\n" +
+        "La sincronización no está completa.\n\n" +
+        "Si continúas, este cambio se guardará solo en este celular y la otra persona no lo verá todavía.\n\n" +
         "¿Quieres continuar de todos modos?"
       );
     }
 
+    function initFirebaseSync() {
+      saveFirebaseSettingsOnly();
 
-    function syncConfigured() {
-      return !!(state.settings.syncUrl && state.settings.syncSecret && state.settings.syncFamilyCode);
-    }
-
-    function setSyncStatus(message, type = "") {
-      const el = document.getElementById("syncStatus");
-      if (!el) return;
-      el.className = `sync-status ${type}`;
-      el.textContent = message;
-    }
-
-    function saveSyncSettingsOnly() {
-      const ids = ["syncUserName", "syncFamilyCode", "syncUrl", "syncSecret", "syncAuto"];
-      ids.forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        state.settings[id] = el.value.trim();
-      });
-      if (!state.settings.syncFamilyCode) state.settings.syncFamilyCode = "LUNA2026";
-      if (!state.settings.syncAuto) state.settings.syncAuto = "yes";
-      writeJSON(SETTINGS_KEY, state.settings);
-      updateSyncReminder();
-    }
-
-    function syncRequest(params) {
-      saveSyncSettingsOnly();
-
-      const baseUrl = (state.settings.syncUrl || "").trim();
-      const secret = (state.settings.syncSecret || "").trim();
-      const familyCode = (state.settings.syncFamilyCode || "LUNA2026").trim();
-
-      if (!baseUrl || !secret) {
-        return Promise.reject(new Error("Falta URL de sincronización o código secreto."));
+      if (!window.firebase) {
+        throw new Error("No cargó Firebase. Revisa internet o que el navegador no bloquee scripts externos.");
       }
 
-      // Método puente para Android/PWA instalada:
-      // usa un iframe oculto y Apps Script responde con postMessage.
-      return new Promise((resolve, reject) => {
-        const requestId = "luna_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
-        const iframe = document.createElement("iframe");
-        iframe.style.display = "none";
-        iframe.setAttribute("title", "Luna Sync Bridge");
-
-        const clean = () => {
-          window.removeEventListener("message", onMessage);
-          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-        };
-
-        const timer = setTimeout(() => {
-          clean();
-          reject(new Error("La sincronización tardó demasiado. Revisa internet, URL o que el Apps Script tenga el código puente actualizado."));
-        }, 20000);
-
-        function onMessage(event) {
-          const msg = event.data || {};
-          if (!msg || msg.source !== "tratamiento-luna-sync" || msg.requestId !== requestId) return;
-
-          clearTimeout(timer);
-          clean();
-
-          const data = msg.data;
-          if (!data || data.ok === false) {
-            reject(new Error(data && data.error ? data.error : "Respuesta no válida del servidor."));
-          } else {
-            resolve(data);
-          }
-        }
-
-        window.addEventListener("message", onMessage);
-
-        const all = {
-          ...params,
-          familyCode,
-          secret,
-          bridge: "1",
-          requestId
-        };
-
-        const query = Object.keys(all)
-          .filter(k => all[k] !== undefined && all[k] !== null)
-          .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(String(all[k]))}`)
-          .join("&");
-
-        iframe.onerror = () => {
-          clearTimeout(timer);
-          clean();
-          reject(new Error("No se pudo abrir el puente de Google Apps Script."));
-        };
-
-        iframe.src = baseUrl + (baseUrl.includes("?") ? "&" : "?") + query;
-        document.body.appendChild(iframe);
-      });
-    }
-
-    function formatCloudTime(d) {
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
-
-    function parseCloudDateTime(fecha, hora, fallback) {
-      if (fecha && hora) {
-        const d = new Date(`${fecha}T${hora}:00`);
-        if (!Number.isNaN(d.getTime())) return d;
-      }
-      if (fallback) {
-        const f = new Date(String(fallback).replace(" ", "T"));
-        if (!Number.isNaN(f.getTime())) return f;
-      }
-      return new Date();
-    }
-
-    function normalizeStatus(status) {
-      const map = {
-        hecho: "done",
-        tarde: "late",
-        parcial: "partial",
-        no_se_dejo: "refused",
-        "no se dejo": "refused",
-        saltada: "skipped",
-        saltado: "skipped",
-        done: "done",
-        late: "late",
-        partial: "partial",
-        refused: "refused",
-        skipped: "skipped"
+      const config = {
+        ...firebaseConfig,
+        databaseURL: state.settings.firebaseDbUrl || firebaseConfig.databaseURL
       };
-      return map[String(status || "").toLowerCase()] || "done";
+
+      try {
+        lunaFirebaseApp = firebase.app("tratamientoLunaApp");
+      } catch (e) {
+        lunaFirebaseApp = firebase.initializeApp(config, "tratamientoLunaApp");
+      }
+
+      lunaFirebaseDb = firebase.database(lunaFirebaseApp);
+      return lunaFirebaseDb;
     }
 
-    function cloudRecordToLocal(row) {
-      const actual = parseCloudDateTime(row.fecha, row.horaReal, row.actualizado);
-      const updated = row.actualizado ? new Date(String(row.actualizado).replace(" ", "T")) : new Date();
+    function localRecordToFirebaseData(task, record) {
+      const et = effectiveTime(task);
+      const actual = record && record.actualTime ? new Date(record.actualTime) : new Date();
+
       return {
-        status: normalizeStatus(row.estado),
-        actualTime: actual.toISOString(),
-        note: row.nota || "",
-        who: row.quien || "",
-        updatedAt: Number.isNaN(updated.getTime()) ? new Date().toISOString() : updated.toISOString(),
+        taskId: task.id,
+        fecha: dateKey(et),
+        medicina: task.title,
+        horaProgramada: `${pad(et.getHours())}:${pad(et.getMinutes())}`,
+        status: record.status || "done",
+        actualTime: record.actualTime || actual.toISOString(),
+        who: record.who || state.settings.syncUserName || "",
+        note: record.note || "",
+        updatedAt: record.updatedAt || new Date().toISOString()
+      };
+    }
+
+    function firebaseDataToLocalRecord(row) {
+      return {
+        status: row.status || "done",
+        actualTime: row.actualTime || new Date().toISOString(),
+        who: row.who || "",
+        note: row.note || "",
+        updatedAt: row.updatedAt || new Date().toISOString(),
         syncedAt: new Date().toISOString()
       };
     }
 
-    function localRecordToCloudParams(task, record) {
-      const et = effectiveTime(task);
-      const actual = record && record.actualTime ? new Date(record.actualTime) : new Date();
-      return {
-        action: "save",
-        taskId: task.id,
-        fecha: dateKey(et),
-        medicina: task.title,
-        horaProgramada: formatCloudTime(et),
-        estado: record.status || "done",
-        horaReal: formatCloudTime(actual),
-        quien: record.who || state.settings.syncUserName || "",
-        nota: record.note || ""
-      };
-    }
-
-    async function testSyncConnection() {
+    async function testFirebaseConnection() {
       try {
-        setSyncStatus("Probando conexión...", "warn");
-        const data = await syncRequest({ action: "ping" });
-        setSyncStatus((data.message || "Conexión correcta.") + " La sincronización queda guardada en este celular.", "ok");
-        updateSyncReminder();
-        alert("Conexión correcta con Google Sheets. La sincronización queda guardada en este celular.");
-      } catch (err) {
-        setSyncStatus(err.message, "danger");
-        alert("No se pudo conectar: " + err.message);
-      }
-    }
-
-    async function syncFromCloud(showAlert = false) {
-      if (!syncConfigured()) {
-        if (showAlert) alert("Primero configura URL y código secreto.");
-        return;
-      }
-
-      try {
-        setSyncStatus("Sincronizando desde Google Sheets...", "warn");
-        const data = await syncRequest({ action: "get" });
-        const cloud = data.records || {};
-        const local = getRecords();
-        let updated = 0;
-
-        Object.keys(cloud).forEach(taskIdKey => {
-          const task = findTask(taskIdKey);
-          if (!task) return;
-
-          const incoming = cloudRecordToLocal(cloud[taskIdKey]);
-          const current = local[taskIdKey];
-
-          const incomingTime = new Date(incoming.updatedAt).getTime();
-          const currentTime = current && current.updatedAt ? new Date(current.updatedAt).getTime() : 0;
-
-          if (!current || incomingTime >= currentTime) {
-            local[taskIdKey] = incoming;
-            updated++;
-          }
+        setSyncStatus("Probando conexión con Firebase...", "warn");
+        const db = initFirebaseSync();
+        const testRef = db.ref(`tratamientos/${cleanFirebaseKey(getFirebaseFamilyCode())}/conexionPrueba`);
+        await testRef.set({
+          ok: true,
+          who: state.settings.syncUserName || "",
+          at: new Date().toISOString()
         });
-
-        writeJSON(RECORDS_KEY, local);
-        recalc(false);
-
-        const msg = updated
-          ? `Sincronizado. Se actualizaron ${updated} tarea${updated === 1 ? "" : "s"}.`
-          : "Sincronizado. No había cambios nuevos.";
-        setSyncStatus(msg, "ok");
-        if (showAlert) alert(msg);
+        setSyncStatus("Conexión correcta con Firebase. La sincronización queda guardada en este celular.", "ok");
+        startFirebaseListener();
+        alert("Conexión correcta con Firebase.");
       } catch (err) {
-        setSyncStatus(err.message, "danger");
-        if (showAlert) alert("Error al sincronizar: " + err.message);
+        setSyncStatus("No se pudo conectar: " + err.message, "danger");
+        alert("No se pudo conectar con Firebase: " + err.message);
       }
     }
 
-    async function syncRecordToCloud(id, record, silent = true) {
-      if (!syncConfigured()) return;
+    async function syncRecordToFirebase(id, record, silent = true) {
+      if (lunaApplyingRemote) return;
+      if (!firebaseSyncReady()) return;
 
       const task = findTask(id);
       if (!task || !record) return;
 
       try {
-        setSyncStatus("Guardando cambio en Google Sheets...", "warn");
-        await syncRequest(localRecordToCloudParams(task, record));
-        setSyncStatus(`Guardado en Google Sheets por ${record.who || state.settings.syncUserName || "este celular"}.`, "ok");
+        const db = initFirebaseSync();
+        await db.ref(`${getFirebasePath()}/${cleanFirebaseKey(id)}`).set(localRecordToFirebaseData(task, record));
+        setSyncStatus(`Guardado en Firebase por ${record.who || state.settings.syncUserName || "este celular"}.`, "ok");
       } catch (err) {
         setSyncStatus("Guardado localmente, pero no se pudo subir: " + err.message, "danger");
-        if (!silent) alert("No se pudo subir a Google Sheets: " + err.message);
+        if (!silent) alert("No se pudo subir a Firebase: " + err.message);
       }
     }
 
-    async function deleteRecordFromCloud(id, silent = true) {
-      if (!syncConfigured()) return;
+    async function deleteRecordFromFirebase(id, silent = true) {
+      if (!firebaseSyncReady()) return;
 
       try {
-        setSyncStatus("Borrando registro en Google Sheets...", "warn");
-        await syncRequest({ action: "delete", taskId: id });
-        setSyncStatus("Registro borrado en Google Sheets.", "ok");
+        const db = initFirebaseSync();
+        await db.ref(`${getFirebasePath()}/${cleanFirebaseKey(id)}`).remove();
+        setSyncStatus("Registro borrado en Firebase.", "ok");
       } catch (err) {
-        setSyncStatus("Se borró localmente, pero no se pudo borrar en Google Sheets: " + err.message, "danger");
-        if (!silent) alert("No se pudo borrar en Google Sheets: " + err.message);
+        setSyncStatus("Se borró localmente, pero no se pudo borrar en Firebase: " + err.message, "danger");
+        if (!silent) alert("No se pudo borrar en Firebase: " + err.message);
       }
     }
 
-    async function pushAllLocalRecords() {
-      if (!syncConfigured()) {
-        alert("Primero configura URL y código secreto.");
+    function mergeFirebaseSnapshot(snapshot, showAlert = false) {
+      const data = snapshot.val() || {};
+      const local = getRecords();
+      let updated = 0;
+
+      Object.keys(data).forEach(key => {
+        const row = data[key] || {};
+        const taskIdValue = row.taskId || decodeURIComponent(key);
+        if (!findTask(taskIdValue)) return;
+
+        const incoming = firebaseDataToLocalRecord(row);
+        const current = local[taskIdValue];
+
+        const incomingTime = new Date(incoming.updatedAt).getTime();
+        const currentTime = current && current.updatedAt ? new Date(current.updatedAt).getTime() : 0;
+
+        if (!current || incomingTime >= currentTime) {
+          local[taskIdValue] = incoming;
+          updated++;
+        }
+      });
+
+      if (updated) {
+        lunaApplyingRemote = true;
+        writeJSON(RECORDS_KEY, local);
+        recalc(false);
+        lunaApplyingRemote = false;
+      }
+
+      const msg = updated
+        ? `Sincronizado. Se actualizaron ${updated} tarea${updated === 1 ? "" : "s"}.`
+        : "Sincronizado. No había cambios nuevos.";
+
+      setSyncStatus(msg, "ok");
+      if (showAlert) alert(msg);
+    }
+
+    async function syncFromFirebase(showAlert = false) {
+      try {
+        setSyncStatus("Sincronizando desde Firebase...", "warn");
+        const db = initFirebaseSync();
+        const snapshot = await db.ref(getFirebasePath()).once("value");
+        mergeFirebaseSnapshot(snapshot, showAlert);
+        startFirebaseListener();
+      } catch (err) {
+        setSyncStatus("Error al sincronizar: " + err.message, "danger");
+        if (showAlert) alert("Error al sincronizar: " + err.message);
+      }
+    }
+
+    function startFirebaseListener() {
+      if (lunaFirebaseListening || !firebaseSyncReady()) return;
+
+      try {
+        const db = initFirebaseSync();
+        lunaFirebaseListening = true;
+
+        db.ref(getFirebasePath()).on("value", snapshot => {
+          mergeFirebaseSnapshot(snapshot, false);
+        }, err => {
+          setSyncStatus("Error escuchando Firebase: " + err.message, "danger");
+        });
+
+        setSyncStatus("Sincronización en tiempo real activada.", "ok");
+      } catch (err) {
+        setSyncStatus("No se pudo activar tiempo real: " + err.message, "danger");
+      }
+    }
+
+    async function pushAllLocalRecordsFirebase() {
+      if (!firebaseSyncReady()) {
+        alert("Primero configura nombre, código familiar y URL de Firebase.");
         return;
       }
 
@@ -2453,40 +2362,37 @@
         return;
       }
 
-      if (!confirm(`¿Subir ${ids.length} registro${ids.length === 1 ? "" : "s"} local${ids.length === 1 ? "" : "es"} a Google Sheets?`)) return;
+      if (!confirm(`¿Subir ${ids.length} registro${ids.length === 1 ? "" : "s"} local${ids.length === 1 ? "" : "es"} a Firebase?`)) return;
 
       let ok = 0;
       setSyncStatus("Subiendo progreso local...", "warn");
 
       for (const id of ids) {
-        await syncRecordToCloud(id, records[id], true);
+        await syncRecordToFirebase(id, records[id], true);
         ok++;
       }
 
-      const msg = `Listo. Se subieron ${ok} registro${ok === 1 ? "" : "s"} a Google Sheets.`;
+      const msg = `Listo. Se subieron ${ok} registro${ok === 1 ? "" : "s"} a Firebase.`;
       setSyncStatus(msg, "ok");
       alert(msg);
+      startFirebaseListener();
     }
 
-    function autoSyncOnStart() {
-      if (state.settings.syncAuto === "yes" && syncConfigured()) {
-        syncFromCloud(false);
+    function autoFirebaseSyncOnStart() {
+      if (state.settings.syncAuto === "yes" && firebaseSyncReady()) {
+        startFirebaseListener();
+        syncFromFirebase(false);
       }
     }
 
 
-    function markTaskStatus(id, status) {
-      const note = status === "partial" ? prompt("Nota opcional: ¿qué quedó parcial?", "") :
-                   status === "refused" ? prompt("Nota opcional: ¿qué pasó?", "No se dejó aplicar completo") :
-                   status === "skipped" ? prompt("Nota opcional: ¿por qué se saltó?", "") : "";
-      saveTaskRecord(id, status, new Date(), note || "");
-    }
-
     function saveTaskRecord(id, status, actualDate, note = null) {
-      if (!remindBeforeUnsyncedUpdate("marcar esta medicina")) return;
+      if (!remindBeforeUnsyncedUpdate()) return;
+
       const records = getRecords();
       const prev = records[id] || {};
       const who = state.settings.syncUserName || prev.who || "";
+
       records[id] = {
         status,
         actualTime: actualDate.toISOString(),
@@ -2494,26 +2400,30 @@
         who,
         updatedAt: new Date().toISOString()
       };
+
       writeJSON(RECORDS_KEY, records);
       recalc(false);
-      syncRecordToCloud(id, records[id], true);
+      syncRecordToFirebase(id, records[id], true);
     }
 
     function clearTaskRecord(id) {
-      if (!remindBeforeUnsyncedUpdate("deshacer esta medicina")) return;
+      if (!remindBeforeUnsyncedUpdate()) return;
+
       const records = getRecords();
       delete records[id];
       writeJSON(RECORDS_KEY, records);
       recalc(false);
-      deleteRecordFromCloud(id, true);
+      deleteRecordFromFirebase(id, true);
     }
 
     function addTaskNote(id) {
-      if (!remindBeforeUnsyncedUpdate("agregar una nota")) return;
+      if (!remindBeforeUnsyncedUpdate()) return;
+
       const records = getRecords();
       const current = records[id]?.note || "";
       const note = prompt("Escribe una nota para esta tarea:", current);
       if (note === null) return;
+
       if (!records[id]) {
         records[id] = {
           status: "done",
@@ -2522,12 +2432,13 @@
           updatedAt: new Date().toISOString()
         };
       }
+
       records[id].note = note;
       records[id].who = state.settings.syncUserName || records[id].who || "";
       records[id].updatedAt = new Date().toISOString();
       writeJSON(RECORDS_KEY, records);
       recalc(false);
-      syncRecordToCloud(id, records[id], true);
+      syncRecordToFirebase(id, records[id], true);
     }
 
     function postponeTask(id) {
@@ -3341,8 +3252,8 @@
 
     loadSettings();
     recalc(true);
-    updateSyncReminder();
-    setTimeout(autoSyncOnStart, 900);
+    updateFirebaseReminder();
+    setTimeout(autoFirebaseSyncOnStart, 900);
   </script>
 
   <script>

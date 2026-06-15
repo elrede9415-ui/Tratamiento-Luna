@@ -1,4 +1,4 @@
-const CACHE_NAME = "tratamiento-luna-v14-sync-iframe";
+const CACHE_NAME = "tratamiento-luna-v15-firebase";
 const APP_FILES = [
   "./",
   "./index.html",
@@ -28,7 +28,7 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(event.request.url);
 
-  // No interceptar Apps Script ni recursos externos.
+  // No interceptar Firebase ni otros recursos externos.
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(

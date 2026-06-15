@@ -2,7 +2,6 @@
   "name": "Tratamiento Luna",
   "short_name": "Luna",
   "id": "./",
-  "description": "Control personal del tratamiento de Luna: checklist, inventario, historial y calendario.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
