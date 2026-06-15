@@ -1,4 +1,4 @@
-const CACHE_NAME = "tratamiento-luna-v13-sync-guard";
+const CACHE_NAME = "tratamiento-luna-v14-sync-iframe";
 const APP_FILES = [
   "./",
   "./index.html",
@@ -28,10 +28,8 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(event.request.url);
 
-  // No interceptar Google Apps Script ni otros recursos externos.
-  if (url.origin !== self.location.origin) {
-    return;
-  }
+  // No interceptar Apps Script ni recursos externos.
+  if (url.origin !== self.location.origin) return;
 
   event.respondWith(
     caches.match(event.request).then((cached) => {

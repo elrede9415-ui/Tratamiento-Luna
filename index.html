@@ -2232,34 +2232,47 @@
         return Promise.reject(new Error("Falta URL de sincronización o código secreto."));
       }
 
+      // Método puente para Android/PWA instalada:
+      // usa un iframe oculto y Apps Script responde con postMessage.
       return new Promise((resolve, reject) => {
-        const callback = "lunaSyncCallback_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
-        const script = document.createElement("script");
+        const requestId = "luna_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.setAttribute("title", "Luna Sync Bridge");
+
         const clean = () => {
-          try { delete window[callback]; } catch(e) { window[callback] = undefined; }
-          if (script.parentNode) script.parentNode.removeChild(script);
+          window.removeEventListener("message", onMessage);
+          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
         };
 
         const timer = setTimeout(() => {
           clean();
-          reject(new Error("La sincronización tardó demasiado. Revisa internet o la URL."));
-        }, 18000);
+          reject(new Error("La sincronización tardó demasiado. Revisa internet, URL o que el Apps Script tenga el código puente actualizado."));
+        }, 20000);
 
-        window[callback] = (data) => {
+        function onMessage(event) {
+          const msg = event.data || {};
+          if (!msg || msg.source !== "tratamiento-luna-sync" || msg.requestId !== requestId) return;
+
           clearTimeout(timer);
           clean();
+
+          const data = msg.data;
           if (!data || data.ok === false) {
             reject(new Error(data && data.error ? data.error : "Respuesta no válida del servidor."));
           } else {
             resolve(data);
           }
-        };
+        }
+
+        window.addEventListener("message", onMessage);
 
         const all = {
           ...params,
           familyCode,
           secret,
-          callback
+          bridge: "1",
+          requestId
         };
 
         const query = Object.keys(all)
@@ -2267,14 +2280,14 @@
           .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(String(all[k]))}`)
           .join("&");
 
-        script.onerror = () => {
+        iframe.onerror = () => {
           clearTimeout(timer);
           clean();
-          reject(new Error("No se pudo conectar con Google Apps Script."));
+          reject(new Error("No se pudo abrir el puente de Google Apps Script."));
         };
 
-        script.src = baseUrl + (baseUrl.includes("?") ? "&" : "?") + query;
-        document.body.appendChild(script);
+        iframe.src = baseUrl + (baseUrl.includes("?") ? "&" : "?") + query;
+        document.body.appendChild(iframe);
       });
     }
 
