@@ -1,4 +1,4 @@
-const CACHE_NAME = "tratamiento-luna-v8-ajustes-colores";
+const CACHE_NAME = "tratamiento-luna-v10-sync-texto-general";
 const APP_FILES = [
   "./",
   "./index.html",
@@ -10,9 +10,7 @@ const APP_FILES = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_FILES))
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_FILES)));
   self.skipWaiting();
 });
 

@@ -924,6 +924,40 @@
       font-weight: 850;
     }
 
+  
+    .sync-status {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: var(--card2);
+      color: var(--muted);
+      border: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .sync-status.ok {
+      background: var(--ok-soft);
+      color: var(--ok);
+      border-color: var(--ok);
+    }
+
+    .sync-status.warn {
+      background: var(--warn-soft);
+      color: #92400e;
+      border-color: var(--warn);
+    }
+
+    .sync-status.danger {
+      background: var(--danger-soft);
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+
+    body.dark .sync-status.warn {
+      color: #fcd34d;
+    }
+
   </style>
   <link rel="manifest" href="./manifest.json" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
@@ -1223,6 +1257,40 @@
 
           <button class="btn" onclick="saveSettings()">Guardar cambios</button>
 
+          <details class="compact-details" open>
+            <summary>🔄 Sincronización compartida</summary>
+            <div class="details-body">
+              <p class="muted small">Permite compartir el estado del tratamiento entre varios celulares. Cada registro muestra quién marcó la medicina. No sincroniza fotos.</p>
+
+              <label for="syncUserName">Nombre para identificar este celular</label>
+              <input id="syncUserName" placeholder="Ejemplo: Eliud, Mamá, Papá, cuidador" />
+
+              <label for="syncFamilyCode">Código familiar</label>
+              <input id="syncFamilyCode" placeholder="LUNA2026" />
+
+              <label for="syncUrl">URL de sincronización</label>
+              <input id="syncUrl" placeholder="https://script.google.com/macros/s/.../exec" />
+
+              <label for="syncSecret">Código secreto</label>
+              <input id="syncSecret" type="password" placeholder="Tu código secreto privado" />
+
+              <label for="syncAuto">Sincronizar al abrir</label>
+              <select id="syncAuto">
+                <option value="yes">Sí</option>
+                <option value="no">No</option>
+              </select>
+
+              <div class="actions-row">
+                <button class="mini-btn" onclick="testSyncConnection()">Probar conexión</button>
+                <button class="mini-btn" onclick="syncFromCloud(true)">Sincronizar ahora</button>
+                <button class="mini-btn" onclick="pushAllLocalRecords()">Subir mi progreso</button>
+              </div>
+
+              <div id="syncStatus" class="sync-status">Configura el código secreto y toca “Probar conexión”.</div>
+            </div>
+          </details>
+
+
           <details class="compact-details">
             <summary>📅 Recordatorios de Google Calendar</summary>
             <div class="details-body">
@@ -1452,7 +1520,12 @@
         ecPerUse: 4.0,
         ocPerPump: 0.10,
         mmPerBath: 25.0,
-        refillPct: 20
+        refillPct: 20,
+        syncUserName: "",
+        syncFamilyCode: "LUNA2026",
+        syncUrl: "https://script.google.com/macros/s/AKfycbz1hQ6JzIvv0uHVBFN8gC8jkgUABvHlrJdekS8F10NXGnbtznRfU-pe_ffdkREx4HZapA/exec",
+        syncSecret: "",
+        syncAuto: "yes"
       }
     };
 
@@ -1612,6 +1685,11 @@
       document.getElementById("ocPerPump").value = state.settings.ocPerPump;
       document.getElementById("mmPerBath").value = state.settings.mmPerBath;
       document.getElementById("refillPct").value = state.settings.refillPct;
+      document.getElementById("syncUserName").value = state.settings.syncUserName || "";
+      document.getElementById("syncFamilyCode").value = state.settings.syncFamilyCode || "LUNA2026";
+      document.getElementById("syncUrl").value = state.settings.syncUrl || "";
+      document.getElementById("syncSecret").value = state.settings.syncSecret || "";
+      document.getElementById("syncAuto").value = state.settings.syncAuto || "yes";
 
       const theme = localStorage.getItem(THEME_KEY) || "light";
       applyTheme(theme);
@@ -1638,6 +1716,11 @@
       state.settings.ocPerPump = parseFloat(document.getElementById("ocPerPump").value) || 0.10;
       state.settings.mmPerBath = parseFloat(document.getElementById("mmPerBath").value) || 25.0;
       state.settings.refillPct = parseFloat(document.getElementById("refillPct").value) || 20;
+      state.settings.syncUserName = document.getElementById("syncUserName").value.trim();
+      state.settings.syncFamilyCode = document.getElementById("syncFamilyCode").value.trim() || "LUNA2026";
+      state.settings.syncUrl = document.getElementById("syncUrl").value.trim();
+      state.settings.syncSecret = document.getElementById("syncSecret").value.trim();
+      state.settings.syncAuto = document.getElementById("syncAuto").value || "yes";
 
       writeJSON(SETTINGS_KEY, state.settings);
       document.querySelector("h1").textContent = `Tratamiento ${state.settings.petName}`;
@@ -1908,6 +1991,7 @@
       const info = taskVisualInfo(t, rec);
       const status = `<span class="status ${info.statusClass}">${info.label}</span>`;
       const actual = rec && rec.actualTime ? `<div class="task-detail"><strong>Hora real:</strong> ${formatTime(new Date(rec.actualTime))}</div>` : "";
+      const who = rec && rec.who ? `<div class="task-detail"><strong>Por:</strong> ${escapeHTML(rec.who)}</div>` : "";
       const note = rec && rec.note ? `<div class="task-detail"><strong>Nota:</strong> ${escapeHTML(rec.note)}</div>` : "";
       const moved = getOverrides()[t.id] ? `<div class="task-detail"><strong>Reprogramada:</strong> horario original ${formatTime(new Date(t.time))}</div>` : "";
       const warningLine = info.line ? `<div class="task-detail ${info.lineClass}">${info.line}</div>` : "";
@@ -1920,7 +2004,7 @@
             <div class="task-detail">${t.detail}</div>
             ${warningLine}
             <div class="task-detail"><strong>Fase:</strong> ${t.phase}</div>
-            ${actual}${moved}${note}
+            ${actual}${who}${moved}${note}
             <div class="task-actions">
               <button class="mini-btn primary" onclick="markTaskNow('${t.id}')">Hecho ahora</button>
               <button class="mini-btn ok" onclick="openTimeEditor('${t.id}', 'actual')">Hecha a otra hora</button>
@@ -1970,6 +2054,270 @@
       maybeMoveLinkedOtiflex(t, actual);
     }
 
+
+    function syncConfigured() {
+      return !!(state.settings.syncUrl && state.settings.syncSecret && state.settings.syncFamilyCode);
+    }
+
+    function setSyncStatus(message, type = "") {
+      const el = document.getElementById("syncStatus");
+      if (!el) return;
+      el.className = `sync-status ${type}`;
+      el.textContent = message;
+    }
+
+    function saveSyncSettingsOnly() {
+      const ids = ["syncUserName", "syncFamilyCode", "syncUrl", "syncSecret", "syncAuto"];
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        state.settings[id] = el.value.trim();
+      });
+      if (!state.settings.syncFamilyCode) state.settings.syncFamilyCode = "LUNA2026";
+      if (!state.settings.syncAuto) state.settings.syncAuto = "yes";
+      writeJSON(SETTINGS_KEY, state.settings);
+    }
+
+    function syncRequest(params) {
+      saveSyncSettingsOnly();
+
+      const baseUrl = (state.settings.syncUrl || "").trim();
+      const secret = (state.settings.syncSecret || "").trim();
+      const familyCode = (state.settings.syncFamilyCode || "LUNA2026").trim();
+
+      if (!baseUrl || !secret) {
+        return Promise.reject(new Error("Falta URL de sincronización o código secreto."));
+      }
+
+      return new Promise((resolve, reject) => {
+        const callback = "lunaSyncCallback_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
+        const script = document.createElement("script");
+        const clean = () => {
+          try { delete window[callback]; } catch(e) { window[callback] = undefined; }
+          if (script.parentNode) script.parentNode.removeChild(script);
+        };
+
+        const timer = setTimeout(() => {
+          clean();
+          reject(new Error("La sincronización tardó demasiado. Revisa internet o la URL."));
+        }, 18000);
+
+        window[callback] = (data) => {
+          clearTimeout(timer);
+          clean();
+          if (!data || data.ok === false) {
+            reject(new Error(data && data.error ? data.error : "Respuesta no válida del servidor."));
+          } else {
+            resolve(data);
+          }
+        };
+
+        const all = {
+          ...params,
+          familyCode,
+          secret,
+          callback
+        };
+
+        const query = Object.keys(all)
+          .filter(k => all[k] !== undefined && all[k] !== null)
+          .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(String(all[k]))}`)
+          .join("&");
+
+        script.onerror = () => {
+          clearTimeout(timer);
+          clean();
+          reject(new Error("No se pudo conectar con Google Apps Script."));
+        };
+
+        script.src = baseUrl + (baseUrl.includes("?") ? "&" : "?") + query;
+        document.body.appendChild(script);
+      });
+    }
+
+    function formatCloudTime(d) {
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function parseCloudDateTime(fecha, hora, fallback) {
+      if (fecha && hora) {
+        const d = new Date(`${fecha}T${hora}:00`);
+        if (!Number.isNaN(d.getTime())) return d;
+      }
+      if (fallback) {
+        const f = new Date(String(fallback).replace(" ", "T"));
+        if (!Number.isNaN(f.getTime())) return f;
+      }
+      return new Date();
+    }
+
+    function normalizeStatus(status) {
+      const map = {
+        hecho: "done",
+        tarde: "late",
+        parcial: "partial",
+        no_se_dejo: "refused",
+        "no se dejo": "refused",
+        saltada: "skipped",
+        saltado: "skipped",
+        done: "done",
+        late: "late",
+        partial: "partial",
+        refused: "refused",
+        skipped: "skipped"
+      };
+      return map[String(status || "").toLowerCase()] || "done";
+    }
+
+    function cloudRecordToLocal(row) {
+      const actual = parseCloudDateTime(row.fecha, row.horaReal, row.actualizado);
+      const updated = row.actualizado ? new Date(String(row.actualizado).replace(" ", "T")) : new Date();
+      return {
+        status: normalizeStatus(row.estado),
+        actualTime: actual.toISOString(),
+        note: row.nota || "",
+        who: row.quien || "",
+        updatedAt: Number.isNaN(updated.getTime()) ? new Date().toISOString() : updated.toISOString(),
+        syncedAt: new Date().toISOString()
+      };
+    }
+
+    function localRecordToCloudParams(task, record) {
+      const et = effectiveTime(task);
+      const actual = record && record.actualTime ? new Date(record.actualTime) : new Date();
+      return {
+        action: "save",
+        taskId: task.id,
+        fecha: dateKey(et),
+        medicina: task.title,
+        horaProgramada: formatCloudTime(et),
+        estado: record.status || "done",
+        horaReal: formatCloudTime(actual),
+        quien: record.who || state.settings.syncUserName || "",
+        nota: record.note || ""
+      };
+    }
+
+    async function testSyncConnection() {
+      try {
+        setSyncStatus("Probando conexión...", "warn");
+        const data = await syncRequest({ action: "ping" });
+        setSyncStatus(data.message || "Conexión correcta.", "ok");
+        alert("Conexión correcta con Google Sheets.");
+      } catch (err) {
+        setSyncStatus(err.message, "danger");
+        alert("No se pudo conectar: " + err.message);
+      }
+    }
+
+    async function syncFromCloud(showAlert = false) {
+      if (!syncConfigured()) {
+        if (showAlert) alert("Primero configura URL y código secreto.");
+        return;
+      }
+
+      try {
+        setSyncStatus("Sincronizando desde Google Sheets...", "warn");
+        const data = await syncRequest({ action: "get" });
+        const cloud = data.records || {};
+        const local = getRecords();
+        let updated = 0;
+
+        Object.keys(cloud).forEach(taskIdKey => {
+          const task = findTask(taskIdKey);
+          if (!task) return;
+
+          const incoming = cloudRecordToLocal(cloud[taskIdKey]);
+          const current = local[taskIdKey];
+
+          const incomingTime = new Date(incoming.updatedAt).getTime();
+          const currentTime = current && current.updatedAt ? new Date(current.updatedAt).getTime() : 0;
+
+          if (!current || incomingTime >= currentTime) {
+            local[taskIdKey] = incoming;
+            updated++;
+          }
+        });
+
+        writeJSON(RECORDS_KEY, local);
+        recalc(false);
+
+        const msg = updated
+          ? `Sincronizado. Se actualizaron ${updated} tarea${updated === 1 ? "" : "s"}.`
+          : "Sincronizado. No había cambios nuevos.";
+        setSyncStatus(msg, "ok");
+        if (showAlert) alert(msg);
+      } catch (err) {
+        setSyncStatus(err.message, "danger");
+        if (showAlert) alert("Error al sincronizar: " + err.message);
+      }
+    }
+
+    async function syncRecordToCloud(id, record, silent = true) {
+      if (!syncConfigured()) return;
+
+      const task = findTask(id);
+      if (!task || !record) return;
+
+      try {
+        setSyncStatus("Guardando cambio en Google Sheets...", "warn");
+        await syncRequest(localRecordToCloudParams(task, record));
+        setSyncStatus(`Guardado en Google Sheets por ${record.who || state.settings.syncUserName || "este celular"}.`, "ok");
+      } catch (err) {
+        setSyncStatus("Guardado localmente, pero no se pudo subir: " + err.message, "danger");
+        if (!silent) alert("No se pudo subir a Google Sheets: " + err.message);
+      }
+    }
+
+    async function deleteRecordFromCloud(id, silent = true) {
+      if (!syncConfigured()) return;
+
+      try {
+        setSyncStatus("Borrando registro en Google Sheets...", "warn");
+        await syncRequest({ action: "delete", taskId: id });
+        setSyncStatus("Registro borrado en Google Sheets.", "ok");
+      } catch (err) {
+        setSyncStatus("Se borró localmente, pero no se pudo borrar en Google Sheets: " + err.message, "danger");
+        if (!silent) alert("No se pudo borrar en Google Sheets: " + err.message);
+      }
+    }
+
+    async function pushAllLocalRecords() {
+      if (!syncConfigured()) {
+        alert("Primero configura URL y código secreto.");
+        return;
+      }
+
+      const records = getRecords();
+      const ids = Object.keys(records).filter(id => !!findTask(id));
+
+      if (!ids.length) {
+        alert("No hay progreso local para subir.");
+        return;
+      }
+
+      if (!confirm(`¿Subir ${ids.length} registro${ids.length === 1 ? "" : "s"} local${ids.length === 1 ? "" : "es"} a Google Sheets?`)) return;
+
+      let ok = 0;
+      setSyncStatus("Subiendo progreso local...", "warn");
+
+      for (const id of ids) {
+        await syncRecordToCloud(id, records[id], true);
+        ok++;
+      }
+
+      const msg = `Listo. Se subieron ${ok} registro${ok === 1 ? "" : "s"} a Google Sheets.`;
+      setSyncStatus(msg, "ok");
+      alert(msg);
+    }
+
+    function autoSyncOnStart() {
+      if (state.settings.syncAuto === "yes" && syncConfigured()) {
+        syncFromCloud(false);
+      }
+    }
+
+
     function markTaskStatus(id, status) {
       const note = status === "partial" ? prompt("Nota opcional: ¿qué quedó parcial?", "") :
                    status === "refused" ? prompt("Nota opcional: ¿qué pasó?", "No se dejó aplicar completo") :
@@ -1980,14 +2328,17 @@
     function saveTaskRecord(id, status, actualDate, note = null) {
       const records = getRecords();
       const prev = records[id] || {};
+      const who = state.settings.syncUserName || prev.who || "";
       records[id] = {
         status,
         actualTime: actualDate.toISOString(),
         note: note === null ? (prev.note || "") : note,
+        who,
         updatedAt: new Date().toISOString()
       };
       writeJSON(RECORDS_KEY, records);
       recalc(false);
+      syncRecordToCloud(id, records[id], true);
     }
 
     function clearTaskRecord(id) {
@@ -1995,6 +2346,7 @@
       delete records[id];
       writeJSON(RECORDS_KEY, records);
       recalc(false);
+      deleteRecordFromCloud(id, true);
     }
 
     function addTaskNote(id) {
@@ -2002,11 +2354,20 @@
       const current = records[id]?.note || "";
       const note = prompt("Escribe una nota para esta tarea:", current);
       if (note === null) return;
-      if (!records[id]) records[id] = { status: "done", actualTime: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      if (!records[id]) {
+        records[id] = {
+          status: "done",
+          actualTime: new Date().toISOString(),
+          who: state.settings.syncUserName || "",
+          updatedAt: new Date().toISOString()
+        };
+      }
       records[id].note = note;
+      records[id].who = state.settings.syncUserName || records[id].who || "";
       records[id].updatedAt = new Date().toISOString();
       writeJSON(RECORDS_KEY, records);
       recalc(false);
+      syncRecordToCloud(id, records[id], true);
     }
 
     function postponeTask(id) {
@@ -2820,6 +3181,7 @@
 
     loadSettings();
     recalc(true);
+    setTimeout(autoSyncOnStart, 900);
   </script>
 
   <script>
