@@ -1,4 +1,4 @@
-const CACHE_NAME = "tratamiento-luna-v16-firebase-sync-fix";
+const CACHE_NAME = "tratamiento-luna-v17-firebase-key-fix";
 const APP_FILES = [
   "./",
   "./index.html",

@@ -2092,7 +2092,16 @@
     let lunaApplyingRemote = false;
 
     function cleanFirebaseKey(str) {
-      return encodeURIComponent(String(str || "default"));
+      // Firebase Realtime Database no permite estos caracteres en llaves:
+      // . # $ / [ ]
+      // encodeURIComponent no codifica el punto, por eso lo reemplazamos aparte.
+      return encodeURIComponent(String(str || "default"))
+        .replace(/\./g, "%2E")
+        .replace(/\$/g, "%24")
+        .replace(/#/g, "%23")
+        .replace(/\[/g, "%5B")
+        .replace(/\]/g, "%5D")
+        .replace(/\//g, "%2F");
     }
 
     function getFirebaseFamilyCode() {
