@@ -1296,6 +1296,7 @@
                 <button class="mini-btn" onclick="testFirebaseConnection()">Probar conexión</button>
                 <button class="mini-btn" onclick="syncFromFirebase(true)">Sincronizar ahora</button>
                 <button class="mini-btn" onclick="pushAllLocalRecordsFirebase()">Subir mi progreso</button>
+                <button class="mini-btn" onclick="diagnoseFirebaseSync()">Diagnóstico</button>
               </div>
 
               <div id="syncStatus" class="sync-status">Configura nombre, código familiar y toca “Probar conexión”.</div>
@@ -2203,13 +2204,19 @@
     }
 
     function localRecordToFirebaseData(task, record) {
-      const et = effectiveTime(task);
+      let et;
+      try {
+        et = effectiveTime(task);
+      } catch(e) {
+        et = new Date(task.time || record.actualTime || new Date().toISOString());
+      }
+
       const actual = record && record.actualTime ? new Date(record.actualTime) : new Date();
 
       return {
         taskId: task.id,
         fecha: dateKey(et),
-        medicina: task.title,
+        medicina: task.title || task.id || "Registro",
         horaProgramada: `${pad(et.getHours())}:${pad(et.getMinutes())}`,
         status: record.status || "done",
         actualTime: record.actualTime || actual.toISOString(),
@@ -2251,17 +2258,48 @@
 
     async function syncRecordToFirebase(id, record, silent = true) {
       if (lunaApplyingRemote) return;
-      if (!firebaseSyncReady()) return;
+      saveFirebaseSettingsOnly();
 
-      const task = findTask(id);
-      if (!task || !record) return;
+      if (!firebaseSyncReady()) {
+        setSyncStatus("No se subió a Firebase: falta nombre, código familiar o URL.", "danger");
+        if (!silent) alert("Faltan datos de sincronización.");
+        return;
+      }
+
+      if (!record) {
+        setSyncStatus("No se subió a Firebase: registro vacío.", "danger");
+        return;
+      }
+
+      let task = findTask(id);
+
+      // Si por caché o cambio de fecha no se encuentra la tarea, aun así subimos el registro
+      // para que aparezca en Firebase y no se pierda.
+      if (!task) {
+        task = {
+          id,
+          title: id.split("_")[0] || "Registro",
+          time: record.actualTime || new Date().toISOString()
+        };
+      }
 
       try {
         const db = initFirebaseSync();
-        await db.ref(`${getFirebasePath()}/${cleanFirebaseKey(id)}`).set(localRecordToFirebaseData(task, record));
-        setSyncStatus(`Guardado en Firebase por ${record.who || state.settings.syncUserName || "este celular"}.`, "ok");
+        const ref = db.ref(`${getFirebasePath()}/${cleanFirebaseKey(id)}`);
+        const data = localRecordToFirebaseData(task, record);
+
+        await ref.set(data);
+
+        // Verificación inmediata: si esto pasa, el dato sí quedó en Firebase.
+        const check = await ref.once("value");
+        if (!check.exists()) {
+          throw new Error("Firebase respondió, pero el registro no apareció al verificar.");
+        }
+
+        setSyncStatus(`Registro subido y verificado en Firebase. Por: ${record.who || state.settings.syncUserName || "este celular"}.`, "ok");
+        startFirebaseListener();
       } catch (err) {
-        setSyncStatus("Guardado localmente, pero no se pudo subir: " + err.message, "danger");
+        setSyncStatus("Guardado localmente, pero NO se pudo subir a Firebase: " + err.message, "danger");
         if (!silent) alert("No se pudo subir a Firebase: " + err.message);
       }
     }
@@ -2349,33 +2387,77 @@
     }
 
     async function pushAllLocalRecordsFirebase() {
+      saveFirebaseSettingsOnly();
+
       if (!firebaseSyncReady()) {
         alert("Primero configura nombre, código familiar y URL de Firebase.");
         return;
       }
 
       const records = getRecords();
-      const ids = Object.keys(records).filter(id => !!findTask(id));
+      const ids = Object.keys(records);
 
       if (!ids.length) {
-        alert("No hay progreso local para subir.");
+        alert("No hay progreso local para subir. Primero marca una medicina como hecha.");
+        setSyncStatus("No hay registros locales para subir.", "warn");
         return;
       }
 
       if (!confirm(`¿Subir ${ids.length} registro${ids.length === 1 ? "" : "s"} local${ids.length === 1 ? "" : "es"} a Firebase?`)) return;
 
       let ok = 0;
-      setSyncStatus("Subiendo progreso local...", "warn");
+      setSyncStatus("Subiendo progreso local a Firebase...", "warn");
 
       for (const id of ids) {
         await syncRecordToFirebase(id, records[id], true);
         ok++;
       }
 
-      const msg = `Listo. Se subieron ${ok} registro${ok === 1 ? "" : "s"} a Firebase.`;
-      setSyncStatus(msg, "ok");
-      alert(msg);
+      // Verificar cuántos registros hay ya en la nube.
+      try {
+        const db = initFirebaseSync();
+        const snapshot = await db.ref(getFirebasePath()).once("value");
+        const remoteCount = snapshot.exists() ? Object.keys(snapshot.val() || {}).length : 0;
+        const msg = `Listo. Locales: ${ids.length}. En Firebase: ${remoteCount}.`;
+        setSyncStatus(msg, "ok");
+        alert(msg);
+      } catch (err) {
+        const msg = `Se intentaron subir ${ok}, pero no pude verificar Firebase: ${err.message}`;
+        setSyncStatus(msg, "danger");
+        alert(msg);
+      }
+
       startFirebaseListener();
+    }
+
+    async function diagnoseFirebaseSync() {
+      saveFirebaseSettingsOnly();
+      const localRecords = getRecords();
+      const localCount = Object.keys(localRecords).length;
+
+      let msg = `Diagnóstico\\n\\nCódigo: ${getFirebaseFamilyCode()}\\nRegistros en este celular: ${localCount}\\n`;
+
+      try {
+        const db = initFirebaseSync();
+        const snap = await db.ref(getFirebasePath()).once("value");
+        const remote = snap.val() || {};
+        const remoteCount = Object.keys(remote).length;
+        msg += `Registros en Firebase: ${remoteCount}\\n`;
+
+        if (!remoteCount) {
+          msg += "\\nFirebase solo tiene prueba de conexión o está vacío. Marca una medicina y toca Subir mi progreso.";
+          setSyncStatus(`Diagnóstico: local ${localCount}, Firebase ${remoteCount}.`, "warn");
+        } else {
+          msg += "\\nFirebase sí tiene registros. En el otro celular toca Sincronizar ahora y revisa que tenga el mismo código familiar.";
+          setSyncStatus(`Diagnóstico: local ${localCount}, Firebase ${remoteCount}.`, "ok");
+        }
+
+        alert(msg);
+      } catch (err) {
+        msg += `\\nError leyendo Firebase: ${err.message}`;
+        setSyncStatus("Diagnóstico falló: " + err.message, "danger");
+        alert(msg);
+      }
     }
 
     function autoFirebaseSyncOnStart() {
@@ -2402,8 +2484,10 @@
       };
 
       writeJSON(RECORDS_KEY, records);
+      setSyncStatus("Registro guardado en este celular. Subiendo a Firebase...", "warn");
       recalc(false);
       syncRecordToFirebase(id, records[id], true);
+      setTimeout(() => syncRecordToFirebase(id, records[id], true), 800);
     }
 
     function clearTaskRecord(id) {
